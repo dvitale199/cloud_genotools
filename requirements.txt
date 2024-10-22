@@ -1,5 +1,6 @@
 apache-beam
 apache-beam[gcp]
 google-cloud-storage
+google-auth
 gcsfs
 structlog

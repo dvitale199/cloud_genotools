@@ -1,5 +1,5 @@
 FROM apache/beam_python3.12_sdk:2.60.0
-FROM python:3.12
+# FROM python:3.12
 
 WORKDIR /app
 

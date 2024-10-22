@@ -2,6 +2,7 @@ import apache_beam as beam
 from apache_beam.options.pipeline_options import PipelineOptions
 import subprocess
 import logging
+import os
 
 class IaapOptions(PipelineOptions):
     @classmethod
@@ -10,16 +11,6 @@ class IaapOptions(PipelineOptions):
             '--barcodes_file',
             required=True,
             help='GCS path to the barcodes text file.'
-        )
-        parser.add_argument(
-            '--iaap_cli',
-            required=True,
-            help='Path to the iaap-cli executable.'
-        )
-        parser.add_argument(
-            '--input_base_path',
-            required=True,
-            help='Base GCS path to the input idats.'
         )
         parser.add_argument(
             '--out_path',
@@ -36,39 +27,45 @@ class IaapOptions(PipelineOptions):
             required=True,
             help='GCS path to the egt file.'
         )
+        parser.add_argument(
+        '--threads',
+        required=False,
+        default='2',
+        help='Base GCS path to the input idats.'
+    )
 
 class RunIaapCliDoFn(beam.DoFn):
-    def __init__(self, iaap_cli, input_base_path, out_path, bpm, egt):
-        self.iaap_cli = iaap_cli
-        self.input_base_path = input_base_path
+    def __init__(self, out_path, bpm, egt, threads):
+        
         self.out_path = out_path
         self.bpm = bpm
         self.egt = egt
+        self.threads = threads
 
-    def process(self, barcode):
-        barcode = barcode.strip()
-        input_path = f'{self.input_base_path}/{barcode}'
-        
+    def process(self, barcode_path):
+        iaap_cli = '/app/executables/iaap-cli-linux-x64-1.1.0-sha.80d7e5b3d9c1fdfc2e99b472a90652fd3848bbc7/iaap-cli/iaap-cli'
+        barcode = barcode_path.strip().split('/')[-1]
+        out_barcode_path =  f'{self.out_path}/{barcode}'
+             
         iaap_command = [
-            self.iaap_cli,
+            iaap_cli,
             'gencall',
             self.bpm,
             self.egt,
-            self.out_path,
-            '-f', barcode,
+            out_barcode_path,
+            '-f', barcode_path,
             '-p',
-            '-t', '4'
+            '-t', self.threads
         ]
 
         logging.info(f"Executing command: {' '.join(iaap_command)}")
-        print(iaap_command)
-        # try:
-        #     subprocess.run(iaap_command, check=True)
-        #     yield f'Barcode {barcode}: Processing completed successfully.'
-        # except subprocess.CalledProcessError as e:
-        #     error_msg = f'Barcode {barcode}: Error during processing.\n{e}'
-        #     logging.error(error_msg)
-        #     yield error_msg
+        try:
+            subprocess.run(iaap_command, check=True)
+            yield f'Barcode {barcode}: Processing completed successfully.'
+        except subprocess.CalledProcessError as e:
+            error_msg = f'Barcode {barcode}: Error during processing.\n{e}'
+            logging.error(error_msg)
+            yield error_msg
 
 def run_pipeline(pipeline_options):
     iaap_options = pipeline_options.view_as(IaapOptions)
@@ -78,11 +75,10 @@ def run_pipeline(pipeline_options):
             | 'ReadBarcodes' >> beam.io.ReadFromText(iaap_options.barcodes_file)
             | 'RunIaapCli' >> beam.ParDo(
                 RunIaapCliDoFn(
-                    iaap_cli=iaap_options.iaap_cli,
-                    input_base_path=iaap_options.input_base_path,
                     out_path=iaap_options.out_path,
                     bpm=iaap_options.bpm,
-                    egt=iaap_options.egt
+                    egt=iaap_options.egt,
+                    threads=iaap_options.threads
                 )
             )
             | 'PrintResults' >> beam.Map(print)
