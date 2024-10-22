@@ -1,0 +1,6 @@
+.venv
+GP2_data_proc.ipynb
+Dockerfile
+README.md
+data/20*
+executables
